@@ -1,0 +1,772 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Greyform Billing</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;700;800&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one working column — file bar, then a project list beside the selected invoice (stacks on phones).
+   Accent is the hi-vis yellow of the trip sheet's header row. */
+:root{
+  --bg:#f3f5f8; --surface:#ffffff; --sunk:#eef1f5; --ink:#18202b; --muted:#566273; --line:#d8dee6;
+  --accent:#f2b705; --accent-ink:#1b1f26; --accent-soft:#fdf3cf;
+  --ok:#1d7a4a; --ok-soft:#e3f3ea; --warn:#a8510f; --warn-soft:#fbecdf; --focus:#2b6cb0;
+  --f-display:"Archivo","Arial Narrow",Arial,sans-serif;
+  --f-body:"IBM Plex Sans",-apple-system,"Segoe UI",Roboto,sans-serif;
+  --f-mono:"IBM Plex Mono",ui-monospace,"Cascadia Mono",Consolas,monospace;
+  --r:8px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#11151b; --surface:#191f27; --sunk:#141920; --ink:#e7ebf0; --muted:#9aa6b5; --line:#2b333e;
+  --accent:#f5c22e; --accent-ink:#15181d; --accent-soft:#3a3212;
+  --ok:#4cc38a; --ok-soft:#14301f; --warn:#f0a35a; --warn-soft:#3a2513; --focus:#7fb3ff; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11151b; --surface:#191f27; --sunk:#141920; --ink:#e7ebf0; --muted:#9aa6b5; --line:#2b333e;
+  --accent:#f5c22e; --accent-ink:#15181d; --accent-soft:#3a3212;
+  --ok:#4cc38a; --ok-soft:#14301f; --warn:#f0a35a; --warn-soft:#3a2513; --focus:#7fb3ff; color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 var(--f-body);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:20px 48px}
+.wrap{max-width:1240px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+h1,h2,h3{font-family:var(--f-display);margin:0;text-wrap:balance;letter-spacing:-.005em}
+h1{font-size:1.65rem;font-weight:800}
+h2{font-size:1.15rem;font-weight:700}
+.eyebrow{font:500 .72rem/1 var(--f-mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+.mono{font-family:var(--f-mono)}
+.num{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.muted{color:var(--muted)}
+button{font:inherit;cursor:pointer}
+:focus-visible{outline:2px solid var(--focus);outline-offset:2px}
+
+header.top{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px}
+header.top p{margin:4px 0 0;color:var(--muted);max-width:60ch}
+
+/* file bar */
+.filebar{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;
+  background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
+.drop{display:flex;gap:14px;align-items:center;min-width:0}
+.drop .tile{flex:none;width:44px;height:44px;border-radius:6px;background:var(--accent);color:var(--accent-ink);
+  display:grid;place-items:center;font:700 .8rem var(--f-mono)}
+.drop .meta{min-width:0}
+.drop .fname{font-weight:600;overflow-wrap:anywhere}
+.filebar.dragging{outline:2px dashed var(--accent);outline-offset:3px}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:2px 9px;border-radius:999px;font:500 .74rem/1.6 var(--f-mono);white-space:nowrap}
+.pill.sample{background:var(--accent-soft);color:var(--ink)}
+.pill.ok{background:var(--ok-soft);color:var(--ok)}
+.pill.warn{background:var(--warn-soft);color:var(--warn)}
+.btn{border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:6px;padding:8px 14px;font-weight:500}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink);font-weight:600}
+.btn.primary:hover{filter:brightness(.96)}
+.btn[disabled]{opacity:.5;cursor:not-allowed}
+.actions{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+input[type=file]{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.msg{border-radius:var(--r);padding:10px 14px;font-size:.92rem}
+.msg.err{background:var(--warn-soft);color:var(--warn);border:1px solid var(--warn)}
+.msg.note{background:var(--sunk);color:var(--muted)}
+
+/* totals strip */
+.totals{display:flex;flex-wrap:wrap;gap:8px 28px;align-items:baseline;padding:2px 2px}
+.totals div{display:flex;flex-direction:column}
+.totals b{font:600 1.35rem/1.2 var(--f-display);font-variant-numeric:tabular-nums}
+
+/* main split */
+.split{display:grid;grid-template-columns:minmax(0,340px) minmax(0,1fr);gap:18px;align-items:start}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);min-width:0}
+.panel > .hd{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 16px;border-bottom:1px solid var(--line)}
+.plist{list-style:none;margin:0;padding:6px}
+.plist button{width:100%;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:2px 10px;align-items:center;text-align:left;
+  background:none;border:0;border-radius:6px;padding:9px 10px;color:var(--ink)}
+.plist button:hover{background:var(--sunk)}
+.plist button[aria-current="true"]{background:var(--accent-soft)}
+.plist .pn{font-weight:600}
+.plist .pa{font-family:var(--f-mono);font-size:.86rem}
+.plist .ps{grid-column:1/-1;display:flex;gap:8px;align-items:center;font-size:.8rem;color:var(--muted)}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--ok);flex:none}
+.dot.warn{background:var(--warn)}
+
+.inv{padding:16px;display:flex;flex-direction:column;gap:18px;min-width:0}
+.invhd{display:flex;flex-wrap:wrap;justify-content:space-between;gap:10px;align-items:flex-start}
+.invhd .ref{font:500 .9rem var(--f-mono);color:var(--muted)}
+.gen{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:4px 22px}
+.gen .f{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr);gap:8px;padding:6px 0;border-bottom:1px dotted var(--line);font-size:.9rem;align-items:baseline}
+.gen .f span:first-child{color:var(--muted)}
+.gen .f span:last-child{font-weight:500;overflow-wrap:anywhere}
+.secthd{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
+.tablewrap{overflow-x:auto;border:1px solid var(--line);border-radius:6px}
+table.lines{border-collapse:collapse;width:100%;font-size:.86rem;min-width:1100px}
+table.lines th{background:var(--accent);color:var(--accent-ink);text-align:left;font:600 .74rem/1.25 var(--f-body);padding:7px 8px;vertical-align:bottom}
+table.lines td{padding:6px 8px;border-top:1px solid var(--line);vertical-align:top}
+table.lines tr.item td{font-weight:500}
+table.lines tr.comment td{color:var(--muted)}
+table.lines tr.comment td.desc{font-family:var(--f-mono);font-size:.8rem;white-space:nowrap}
+table.lines td:nth-child(3),table.lines th:nth-child(3){min-width:300px}
+table.lines td.code{font-family:var(--f-mono);font-size:.82rem;white-space:nowrap}
+table.lines td.miss{color:var(--warn);font-weight:600}
+.sum{display:grid;grid-template-columns:auto auto;gap:4px 24px;justify-content:end;font-size:.95rem}
+.sum span:nth-child(odd){color:var(--muted);text-align:right}
+.sum span:nth-child(even){font-family:var(--f-mono);font-variant-numeric:tabular-nums;text-align:right}
+.sum .grand{font-weight:600;color:var(--ink)!important;border-top:1px solid var(--line);padding-top:4px}
+.warns{display:flex;flex-direction:column;gap:6px}
+details.settings{background:var(--surface);border:1px solid var(--line);border-radius:var(--r)}
+details.settings summary{padding:12px 16px;cursor:pointer;font-weight:600}
+details.settings .body{padding:0 16px 16px;display:flex;flex-direction:column;gap:10px}
+table.rates{border-collapse:collapse;font-size:.85rem;width:100%;min-width:640px}
+table.rates th,table.rates td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:left}
+table.rates th{font-weight:600;color:var(--muted);font-size:.78rem}
+.copyarea{width:100%;height:120px;font:12px var(--f-mono);border:1px solid var(--line);border-radius:6px;background:var(--sunk);color:var(--ink);padding:8px}
+.toast{position:fixed;left:50%;bottom:calc(20px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);
+  background:var(--ink);color:var(--bg);padding:8px 16px;border-radius:999px;font-size:.9rem;opacity:0;transition:opacity .2s;pointer-events:none}
+.toast.on{opacity:1}
+.steps{margin:0;padding-left:20px;color:var(--muted);font-size:.9rem}
+@media (max-width:860px){
+  .split{grid-template-columns:minmax(0,1fr)}
+  .gen{grid-template-columns:minmax(0,1fr)}
+  .filebar{grid-template-columns:minmax(0,1fr)}
+  .actions{justify-content:flex-start}
+}
+@media (prefers-reduced-motion:reduce){.toast{transition:none}}
+</style>
+
+</head><body>
+<div class="wrap">
+  <header class="top">
+    <div>
+      <div class="eyebrow">Monthly billing</div>
+      <h1>Greyform Billing</h1>
+      <p>Drop the month's trip sheet in. Every project's invoice is built from its trips, ready to copy into the ERP.</p>
+    </div>
+  </header>
+
+  <section class="filebar" id="filebar" aria-label="Billing file">
+    <div class="drop">
+      <div class="tile" aria-hidden="true">XLSX</div>
+      <div class="meta">
+        <div class="fname" id="fname">–</div>
+        <div class="muted" id="fsub" style="font-size:.88rem">–</div>
+      </div>
+    </div>
+    <div class="actions">
+      <label class="btn primary" for="file" tabindex="0" id="chooseLbl">Choose billing file</label>
+      <input type="file" id="file" accept=".xlsx,.xlsm">
+      <button class="btn" id="dlBtn" type="button" hidden>Download Excel with tables</button>
+    </div>
+  </section>
+  <div id="msg" class="msg err" hidden></div>
+
+  <div class="totals" id="totals" aria-live="polite"></div>
+
+  <div class="split">
+    <section class="panel" aria-label="Projects">
+      <div class="hd"><h2>Projects</h2><span class="eyebrow" id="pcount"></span></div>
+      <ul class="plist" id="plist"></ul>
+    </section>
+    <section class="panel" aria-label="Invoice">
+      <div class="inv" id="inv"></div>
+    </section>
+  </div>
+
+  <details class="settings" id="settings">
+    <summary>Item codes and rates used</summary>
+    <div class="body">
+      <p class="muted" style="margin:0">From past ERP invoices and the trip sheet's rate columns. Standby is time on site over 4 hours, rounded to the nearest half hour. Overtime applies when the truck leaves after 21:00. GST 9%. Due date is 45 days after the last trip.</p>
+      <div class="tablewrap"><table class="rates" id="rates"></table></div>
+    </div>
+  </details>
+
+  <details class="settings">
+    <summary>How to use it</summary>
+    <div class="body">
+      <ol class="steps">
+        <li>Click <b>Choose billing file</b> (or drag the Excel file onto the page). The file is read in your browser and is not uploaded anywhere.</li>
+        <li>Pick a project on the left. Check its total against the trip sheet.</li>
+        <li>Click <b>Copy lines for ERP</b>, then click the first empty line in the ERP invoice and paste.</li>
+        <li><b>Download Excel with tables</b> gives back your billing file with nothing removed, and the invoice table added below the trips on each project tab.</li>
+      </ol>
+    </div>
+  </details>
+</div>
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+/* ===================== RULES (same as billing.py) ===================== */
+const EQUIPMENT = {
+  "40FTFB": ["LGPTFM40","S (LOG) - SUPPLY OF 40FT PLATFORM",210,"LGPTFM40STDBY","S (LOG) - SUPPLY OF 40FT PLATFORM STANDBY",60],
+  "45FTFB": ["LGPTFM45","S (LOG) - SUPPLY OF 45FT PLATFORM",250,"LGPTFM45STDBY","S (LOG) - SUPPLY OF 45FT PLATFORM STANDBY",60],
+  "50FTFB": ["LGPTFM50","S (LOG) - SUPPLY OF 50FT PLATFORM",400,"LGPTFM50STDB","S (LOG) - SUPPLY OF 50FT PLATFORM STANDBY",100],
+  "30FTLB": ["LGLBD30","S (LOG) - SUPPLY OF 30FT LOWBED",230,"ASK BOSS","S (LOG) - SUPPLY OF 30FT LOWBED STANDBY",60],
+  "40FTLB": ["LGLBD40","S (LOG) - SUPPLY OF 40FT LOWBED",270,"ASK BOSS","S (LOG) - SUPPLY OF 40FT LOWBED STANDBY",70],
+};
+const FUEL = ["LGFUEOTJ","S (LOG) - FUEL SURCHARGE OUTSIDE JURONG",20];
+const OVERTIME = ["LGOT","S (LOG) - SUPPLY OF OVERTIME",80];
+const STANDBY_UOM = "HOUR", OT_AFTER_MIN = 21*60, FREE_HOURS = 4, GST = 0.09, PAYMENT_DAYS = 45;
+const VEHICLE_PREFIX = "XE", VEHICLE_OVERRIDE = {"6897":"XE6897","5378":"XE5378"};
+const PROJECT_ALIAS = {"BMC72":"BUKIT MERAH C72"};
+const HEADER = {customer:"GREYFORM PTE LTD",contact:"FINANCE DEPARTMENT",salesperson:"GOOGLEADS",vat_group:"SR9",wyn:"LOG",
+  consignee:"Z_NA",industry:"CONST, ENGRG & RENO",asset:"Z_NA",cust_dept:"Z_NA"};
+const LINE_COLS = ["Type","No.","Container No.","Description","Quantity","Unit of Measure Code","Unit Price Excl. VAT",
+  "Line Amount Excl. VAT","VAT Prod. Posting Group","Qty. to Assign","Appl. For Servi. Decl.","WYN Dept Code","Project Code",
+  "Consignee Code","Industry Code","Asset no. Code","Cust Dept Code"];
+const SAMPLE = null;
+
+/* ===================== helpers ===================== */
+const r2 = x => Math.round((x + Number.EPSILON) * 100) / 100;
+const pad = n => String(n).padStart(2,"0");
+const money = x => x.toLocaleString("en-SG",{minimumFractionDigits:2,maximumFractionDigits:2});
+const qtyFmt = x => Number.isInteger(x) ? String(x) : String(x);
+// dates are plain {y,m,d} day numbers (days since 1970-01-01, UTC) to avoid time-zone drift
+const dayNum = (y,m,d) => Math.round(Date.UTC(y,m-1,d)/86400000);
+const ymd = n => { const t = new Date(n*86400000); return [t.getUTCFullYear(), t.getUTCMonth()+1, t.getUTCDate()]; };
+const dmyDots = n => { const [y,m,d] = ymd(n); return `${pad(d)}.${pad(m)}.${y}`; };
+const dmySlash = n => { const [y,m,d] = ymd(n); return `${d}/${m}/${y}`; };
+const EXCEL_EPOCH = dayNum(1899,12,30);
+const hm = mins => `${pad(Math.floor(mins/60)%24)}:${pad(mins%60)}`;
+const ampm = mins => hm(mins) + ((Math.floor(mins/60)%24) >= 12 ? " PM" : " AM");
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+function plate(num){
+  const s = String(num).trim();
+  if (VEHICLE_OVERRIDE[s]) return VEHICLE_OVERRIDE[s];
+  if (!/^\d+$/.test(s) || s.length > 4) return s;
+  const d = s.padStart(4,"0"), p = VEHICLE_PREFIX.slice(-2);
+  let total = 9*(p.charCodeAt(0)-64) + 4*(p.charCodeAt(1)-64);
+  [5,4,3,2].forEach((w,i) => total += Number(d[i]) * w);
+  return VEHICLE_PREFIX + String(parseInt(s,10)) + "AZYXUTSRPMLKJHGEDCB"[total % 19];
+}
+function toMinutes(v){
+  if (v == null || v === "") return null;
+  if (typeof v === "number") return Math.round((((v % 1) + 1) % 1) * 1440) % 1440;
+  const m = String(v).trim().match(/^(\d{1,2}):(\d{2})/);
+  return m ? Number(m[1])*60 + Number(m[2]) : null;
+}
+function toDay(v){
+  if (v == null || v === "") return null;
+  if (typeof v === "number") return EXCEL_EPOCH + Math.floor(v);
+  const s = String(v).trim();
+  let m;
+  if ((m = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/))) return dayNum(+m[1],+m[2],+m[3]);
+  if ((m = s.match(/^(\d{1,2})[\/.\-](\d{1,2})[\/.\-](\d{4})$/))) return dayNum(+m[3],+m[2],+m[1]);
+  return null;
+}
+function numStr(v){ // like Python str() of a cell value
+  if (v == null) return "";
+  if (typeof v === "number") return Number.isInteger(v) ? String(v) : String(v);
+  return String(v);
+}
+
+/* ===================== billing logic ===================== */
+function enrich(t){
+  t.project = (PROJECT_ALIAS[t.project_raw.toUpperCase()] || t.project_raw.toUpperCase());
+  t.standby = 0; t.ot = false;
+  if (t.reach != null && t.depart != null){
+    const crosses = t.depart < t.reach;
+    const mins = t.depart - t.reach + (crosses ? 1440 : 0);
+    const over = mins - FREE_HOURS*60;
+    t.standby = over > 0 ? Math.max(0, Math.floor(over/30 + 0.5)) / 2 : 0;
+    t.ot = t.depart > OT_AFTER_MIN || crosses;
+  }
+  t.plate = (t.vehicle == null || t.vehicle === "") ? "" : plate(t.vehicle);
+  t.comment = `${dmyDots(t.date)} DO${t.do} / ${t.plate}`;
+  if (t.standby > 0) t.sb_comment = `DO${t.do} - FROM ${ampm((t.reach + FREE_HOURS*60) % 1440)} TO ${ampm(t.depart)}`;
+  if (t.ot) t.ot_comment = `DO${t.do} - FROM ${ampm(OT_AFTER_MIN)}`;
+  return t;
+}
+function buildInvoice(project, trips, invNo){
+  const lines = [], warnings = [];
+  const groups = new Map();
+  for (const t of trips){ if (!groups.has(t.type)) groups.set(t.type, []); groups.get(t.type).push(t); }
+  const item = (no, desc, qty, uom, price) => ({type:"Item", no, desc, qty, uom, price, amount:r2(qty*price)});
+  const comment = desc => ({type:"Comment", desc});
+  for (const [typ, ts] of groups){
+    if (!EQUIPMENT[typ]){ warnings.push(`Unknown equipment type "${typ}". Add it to the rates before billing.`); continue; }
+    const [no, desc, rate] = EQUIPMENT[typ];
+    lines.push(item(no, desc, ts.length, "UNIT", rate));
+    ts.forEach(t => lines.push(comment(t.comment)));
+    lines.push(comment(""));
+  }
+  lines.push(item(FUEL[0], FUEL[1], trips.length, "UNIT", FUEL[2]));
+  for (const [typ, ts] of groups){
+    const sb = ts.filter(t => t.standby > 0);
+    if (sb.length && EQUIPMENT[typ]){
+      const e = EQUIPMENT[typ];
+      lines.push(item(e[3], e[4], sb.reduce((a,t) => a + t.standby, 0), STANDBY_UOM, e[5]));
+      sb.forEach(t => lines.push(comment(t.sb_comment)));
+    }
+  }
+  const ot = trips.filter(t => t.ot);
+  if (ot.length){
+    lines.push(item(OVERTIME[0], OVERTIME[1], ot.length, "HOUR", OVERTIME[2]));
+    ot.forEach(t => lines.push(comment(t.ot_comment)));
+  }
+  if (lines.some(l => l.type === "Item" && l.no === "ASK BOSS")) warnings.push("An item code is not confirmed yet (shown as ASK BOSS). Confirm the code before entering this invoice.");
+  if (!/^LOG-/i.test(String(invNo))) warnings.push("No invoice number found. Put the LOG number in cell B1 of this project's tab.");
+  const subtotal = r2(lines.filter(l => l.type === "Item").reduce((a,l) => a + l.qty*l.price, 0));
+  const vat = r2(subtotal * GST);
+  const doc = Math.max(...trips.map(t => t.date));
+  return {project, invNo, lines, warnings, subtotal, vat, total:r2(subtotal+vat), doc, due:doc+PAYMENT_DAYS, trips:trips.length};
+}
+function buildAll(trips, tabs){
+  const enriched = trips.map(t => enrich({...t}));
+  const byProject = new Map();
+  for (const t of enriched){ if (!byProject.has(t.project)) byProject.set(t.project, []); byProject.get(t.project).push(t); }
+  const tabMap = new Map(tabs.map(([name, b1]) => [String(name).trim().toUpperCase(), b1]));
+  const invoices = [], skipped = [];
+  for (const p of [...byProject.keys()].sort()){
+    if (!tabMap.has(p)){ skipped.push(p); continue; }
+    const b1 = tabMap.get(p);
+    invoices.push(buildInvoice(p, byProject.get(p), b1 ? String(b1) : "ADD INVOICE NO."));
+  }
+  return {invoices, skipped, tripCount:enriched.length};
+}
+
+/* ===================== reading .xlsx in the browser ===================== */
+async function inflateRaw(bytes){
+  const ds = new DecompressionStream("deflate-raw");
+  const out = new Response(new Blob([bytes]).stream().pipeThrough(ds));
+  return new Uint8Array(await out.arrayBuffer());
+}
+async function unzip(buf){
+  const u8 = new Uint8Array(buf), dv = new DataView(buf);
+  let eocd = -1;
+  for (let i = u8.length - 22; i >= Math.max(0, u8.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50){ eocd = i; break; }
+  if (eocd < 0) throw new Error("not-xlsx");
+  const count = dv.getUint16(eocd + 10, true); let p = dv.getUint32(eocd + 16, true);
+  const files = {}, order = [], dec = new TextDecoder();
+  for (let k = 0; k < count; k++){
+    if (dv.getUint32(p, true) !== 0x02014b50) throw new Error("not-xlsx");
+    const method = dv.getUint16(p + 10, true), crc = dv.getUint32(p + 16, true), csize = dv.getUint32(p + 20, true), usize = dv.getUint32(p + 24, true);
+    const nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true);
+    const lho = dv.getUint32(p + 42, true);
+    const name = dec.decode(u8.subarray(p + 46, p + 46 + nlen));
+    const lnlen = dv.getUint16(lho + 26, true), lxlen = dv.getUint16(lho + 28, true);
+    const start = lho + 30 + lnlen + lxlen, data = u8.subarray(start, start + csize);
+    files[name] = {name, method, data, crc, usize}; order.push(name);
+    p += 46 + nlen + xlen + clen;
+  }
+  return {
+    has: n => n in files, files, order,
+    async text(n){ const f = files[n]; if (!f) return null;
+      const raw = f.method === 0 ? f.data : f.method === 8 ? await inflateRaw(f.data) : null;
+      if (!raw) throw new Error("unsupported-compression");
+      return dec.decode(raw); }
+  };
+}
+const parseXml = s => new DOMParser().parseFromString(s, "application/xml");
+const colIndex = ref => { let n = 0; for (const ch of ref.replace(/\d+$/, "")) n = n*26 + (ch.charCodeAt(0) - 64); return n; };
+function textOf(el){ let s = ""; for (const t of el.getElementsByTagName("t")) s += t.textContent; return s; }
+
+async function readWorkbook(buf){
+  const zip = await unzip(buf);
+  const wbXml = await zip.text("xl/workbook.xml");
+  if (!wbXml) throw new Error("not-xlsx");
+  const relsXml = await zip.text("xl/_rels/workbook.xml.rels");
+  const rels = {};
+  for (const r of parseXml(relsXml).getElementsByTagName("Relationship")) rels[r.getAttribute("Id")] = r.getAttribute("Target");
+  const shared = [];
+  const ssXml = await zip.text("xl/sharedStrings.xml");
+  if (ssXml) for (const si of parseXml(ssXml).getElementsByTagName("si")) shared.push(textOf(si));
+  const sheets = [];
+  for (const sh of parseXml(wbXml).getElementsByTagName("sheet")){
+    const rid = sh.getAttribute("r:id") || sh.getAttributeNS("http://schemas.openxmlformats.org/officeDocument/2006/relationships","id");
+    let target = rels[rid] || ""; target = target.startsWith("/") ? target.slice(1) : "xl/" + target.replace(/^\.\//, "");
+    sheets.push({name: sh.getAttribute("name"), path: target});
+  }
+  const MAX_ROWS = 5000, MAX_COLS = 30;
+  for (const s of sheets){
+    const xml = await zip.text(s.path); const rows = new Map();
+    if (xml){
+      for (const row of parseXml(xml).getElementsByTagName("row")){
+        const r = Number(row.getAttribute("r")); if (r > MAX_ROWS) break;
+        const cells = new Map();
+        for (const c of row.getElementsByTagName("c")){
+          const ci = colIndex(c.getAttribute("r") || "A"); if (ci > MAX_COLS) continue;
+          const t = c.getAttribute("t"); const vEl = c.getElementsByTagName("v")[0];
+          let v = null;
+          if (t === "inlineStr") v = textOf(c);
+          else if (vEl){ const raw = vEl.textContent;
+            if (t === "s") v = shared[Number(raw)] ?? "";
+            else if (t === "str" || t === "e") v = raw;
+            else if (t === "b") v = raw === "1";
+            else v = raw === "" ? null : Number(raw); }
+          if (v !== null && v !== "") cells.set(ci, v);
+        }
+        if (cells.size) rows.set(r, cells);
+      }
+    }
+    s.cell = (r, c) => rows.get(r)?.get(c) ?? null;
+  }
+  return sheets;
+}
+function readTrips(sheets){
+  const seen = new Set(), trips = [], lastRows = {};
+  for (const ws of sheets){
+    for (let r = 1; r < 15; r++){
+      const vals = []; for (let c = 1; c < 30; c++) vals[c] = String(ws.cell(r, c) ?? "").trim().toUpperCase();
+      if (!(vals.includes("PROJECT CODE") && vals.includes("DO NO."))) continue;
+      const col = name => vals.indexOf(name);
+      const cType = vals.findIndex(v => v && v.startsWith("TYPE OF EQUIPMENT"));
+      const C = {date:col("DATE"), do:col("DO NO."), reach:col("REACH"), depart:col("DEPART"), type:cType, veh:col("VEHICLE NO"), proj:col("PROJECT CODE")};
+      let blank = 0;
+      for (let rr = r + 1; rr <= 5000; rr++){
+        const proj = ws.cell(rr, C.proj), date = toDay(ws.cell(rr, C.date));
+        if (!proj || date == null){ if (++blank > 200) break; continue; }
+        blank = 0; lastRows[ws.name] = rr;
+        const t = {date, do: numStr(ws.cell(rr, C.do)).trim(), reach: toMinutes(ws.cell(rr, C.reach)), depart: toMinutes(ws.cell(rr, C.depart)),
+          type: String(ws.cell(rr, C.type) ?? "").trim().toUpperCase(), vehicle: ws.cell(rr, C.veh), project_raw: String(proj).trim()};
+        const key = [t.date, t.do, t.project_raw.toUpperCase(), t.reach, t.depart, t.type].join("|");
+        if (!seen.has(key)){ seen.add(key); trips.push(t); }
+      }
+      break;
+    }
+  }
+  return {trips, lastRows};
+}
+
+/* ===================== writing .xlsx (no library) ===================== */
+const CRC_TABLE = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++){ let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+const crc32 = u8 => { let c = 0xffffffff; for (let i = 0; i < u8.length; i++) c = CRC_TABLE[(c ^ u8[i]) & 0xff] ^ (c >>> 8); return (c ^ 0xffffffff) >>> 0; };
+function zipStore(entries){
+  const enc = new TextEncoder(), parts = [], central = []; let offset = 0;
+  for (const [name, content, pre] of entries){
+    const nameB = enc.encode(name), data = typeof content === "string" ? enc.encode(content) : content;
+    const crc = pre ? pre.crc : crc32(data), method = pre ? pre.method : 0, usize = pre ? pre.usize : data.length;
+    const lh = new DataView(new ArrayBuffer(30));
+    lh.setUint32(0,0x04034b50,true); lh.setUint16(4,20,true); lh.setUint16(6,0x0800,true); lh.setUint16(8,method,true);
+    lh.setUint32(14,crc,true); lh.setUint32(18,data.length,true); lh.setUint32(22,usize,true); lh.setUint16(26,nameB.length,true);
+    parts.push(new Uint8Array(lh.buffer), nameB, data);
+    const ch = new DataView(new ArrayBuffer(46));
+    ch.setUint32(0,0x02014b50,true); ch.setUint16(4,20,true); ch.setUint16(6,20,true); ch.setUint16(8,0x0800,true); ch.setUint16(10,method,true);
+    ch.setUint32(16,crc,true); ch.setUint32(20,data.length,true); ch.setUint32(24,usize,true); ch.setUint16(28,nameB.length,true);
+    ch.setUint32(42,offset,true);
+    central.push(new Uint8Array(ch.buffer), nameB);
+    offset += 30 + nameB.length + data.length;
+  }
+  const csize = central.reduce((a,b) => a + b.length, 0);
+  const end = new DataView(new ArrayBuffer(22));
+  end.setUint32(0,0x06054b50,true); end.setUint16(8,entries.length,true); end.setUint16(10,entries.length,true);
+  end.setUint32(12,csize,true); end.setUint32(16,offset,true);
+  return new Blob([...parts, ...central, new Uint8Array(end.buffer)], {type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+}
+const xesc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const colL = n => { let s = ""; while (n > 0){ const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
+/* ---- write the invoice table into each project tab of the ORIGINAL file (same layout as billing.py) ---- */
+const NS = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
+const START_ROW = 93, GAP_BELOW_TRIPS = 23, GAP_TO_HEADER = 6;
+const LAYOUT_COLS = [1,2,3,4,5,6,7,8,9,10,12,13,14,15,16,17,18];   // A-J, L-R (K is hidden on every tab)
+const WIDTHS = {1:14.4,2:21.5,3:13.5,4:39.4,5:19.5,6:21.4,7:10.1,8:16.5,9:18.3,10:9.2,12:13.4,13:13.9,14:15.6,15:12.3,16:14.4,17:10.5,18:16.1};
+const toXml = d => { let s = new XMLSerializer().serializeToString(d); if (!s.startsWith("<?xml")) s = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n' + s; return s; };
+const kids = (el, name) => [...el.children].filter(e => e.localName === name);
+function addStyles(doc){
+  const ss = doc.documentElement;
+  const push = (listName, xml) => {
+    let list = kids(ss, listName)[0];
+    const frag = new DOMParser().parseFromString(`<x xmlns="${NS}">${xml}</x>`, "application/xml").documentElement.firstElementChild;
+    const node = doc.importNode(frag, true); list.appendChild(node);
+    const n = kids(list, node.localName).length; list.setAttribute("count", n); return n - 1;
+  };
+  const F = {norm: push("fonts", `<font><sz val="11"/><name val="Calibri"/><family val="2"/></font>`),
+             bold: push("fonts", `<font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font>`),
+             red:  push("fonts", `<font><b/><sz val="11"/><color rgb="FFC00000"/><name val="Calibri"/><family val="2"/></font>`)};
+  const B = {none: push("borders", `<border><left/><right/><top/><bottom/><diagonal/></border>`),
+             box: push("borders", `<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="thin"><color rgb="FF000000"/></bottom><diagonal/></border>`),
+             bottom: push("borders", `<border><left/><right/><top/><bottom style="thin"><color rgb="FF000000"/></bottom><diagonal/></border>`),
+             dbl: push("borders", `<border><left style="thin"><color rgb="FF000000"/></left><right style="thin"><color rgb="FF000000"/></right><top style="thin"><color rgb="FF000000"/></top><bottom style="double"><color rgb="FF000000"/></bottom><diagonal/></border>`)};
+  const xf = (font, border, fmt, align) => push("cellXfs",
+    `<xf numFmtId="${fmt}" fontId="${font}" fillId="0" borderId="${border}" xfId="0" applyFont="1" applyBorder="1"${fmt ? ' applyNumberFormat="1"' : ""}${align ? ` applyAlignment="1"><alignment ${align}/></xf>` : "/>"}`);
+  return {
+    norm: xf(F.norm, B.none, 0), normB: xf(F.norm, B.bottom, 0), boldB: xf(F.bold, B.bottom, 0),
+    date: xf(F.norm, B.none, 14), dateB: xf(F.norm, B.bottom, 14),
+    center: xf(F.norm, B.none, 0, 'horizontal="center"'), centerDateB: xf(F.norm, B.bottom, 14, 'horizontal="center"'),
+    head: xf(F.bold, B.box, 0, 'horizontal="left" wrapText="1"'),
+    line: xf(F.norm, B.box, 0, 'horizontal="left"'), money: xf(F.norm, B.box, 2, 'horizontal="left"'),
+    totLabel: xf(F.bold, B.none, 0, 'horizontal="right"'), totVal: xf(F.bold, B.box, 4, 'horizontal="left"'),
+    grand: xf(F.bold, B.dbl, 4, 'horizontal="left"'), warn: xf(F.red, B.none, 0)};
+}
+function setWidths(doc){
+  const ws = doc.documentElement, sd = kids(ws, "sheetData")[0];
+  let cols = kids(ws, "cols")[0];
+  if (!cols){ cols = doc.createElementNS(NS, "cols"); ws.insertBefore(cols, sd); }
+  const per = {}, rest = [];
+  for (const c of kids(cols, "col")){
+    const mn = +c.getAttribute("min"), mx = +c.getAttribute("max");
+    for (let i = mn; i <= Math.min(mx, 18); i++){ const e = c.cloneNode(true); e.setAttribute("min", i); e.setAttribute("max", i); per[i] = e; }
+    if (mx > 18){ const e = c.cloneNode(true); e.setAttribute("min", Math.max(mn, 19)); rest.push(e); }
+    c.remove();
+  }
+  for (const [i, w] of Object.entries(WIDTHS)){
+    const e = per[i] || doc.createElementNS(NS, "col"); e.setAttribute("min", i); e.setAttribute("max", i);
+    e.setAttribute("width", w); e.setAttribute("customWidth", "1"); e.removeAttribute("bestFit"); per[i] = e;
+  }
+  Object.keys(per).map(Number).sort((a, b) => a - b).forEach(i => cols.appendChild(per[i]));
+  rest.forEach(e => cols.appendChild(e));
+}
+function writeTable(doc, top, inv, X){
+  const sd = kids(doc.documentElement, "sheetData")[0];
+  const rowMap = new Map(kids(sd, "row").map(r => [+r.getAttribute("r"), r]));
+  // remove any older version of the table (columns A-R only, everything else is kept)
+  for (const [r, row] of rowMap){
+    if (r < top || r > top + 250) continue;
+    for (const c of kids(row, "c")) if (colIndex(c.getAttribute("r")) <= 18) c.remove();
+    row.removeAttribute("spans"); row.removeAttribute("ht"); row.removeAttribute("customHeight");
+    if (!kids(row, "c").length){ row.remove(); rowMap.delete(r); }
+  }
+  const getRow = (r, ht) => {
+    let row = rowMap.get(r);
+    if (!row){
+      row = doc.createElementNS(NS, "row"); row.setAttribute("r", r);
+      const after = kids(sd, "row").find(x => +x.getAttribute("r") > r);
+      sd.insertBefore(row, after || null); rowMap.set(r, row);
+    }
+    if (ht){ row.setAttribute("ht", ht); row.setAttribute("customHeight", "1"); }
+    return row;
+  };
+  const put = (r, c, v, s, f) => {
+    const row = getRow(r), ref = colL(c) + r, el = doc.createElementNS(NS, "c");
+    el.setAttribute("r", ref); el.setAttribute("s", s);
+    if (f){ const fe = doc.createElementNS(NS, "f"); fe.textContent = f; el.appendChild(fe);
+      const ve = doc.createElementNS(NS, "v"); ve.textContent = v; el.appendChild(ve); }
+    else if (typeof v === "number"){ const ve = doc.createElementNS(NS, "v"); ve.textContent = v; el.appendChild(ve); }
+    else if (v != null && v !== ""){ el.setAttribute("t", "inlineStr"); const is = doc.createElementNS(NS, "is"), te = doc.createElementNS(NS, "t");
+      te.textContent = v; te.setAttributeNS("http://www.w3.org/XML/1998/namespace", "xml:space", "preserve"); is.appendChild(te); el.appendChild(is); }
+    const next = kids(row, "c").find(x => colIndex(x.getAttribute("r")) > c);
+    row.insertBefore(el, next || null);
+  };
+  const serial = d => d - EXCEL_EPOCH;
+  const gen = [["Customer Name", HEADER.customer, "Posting Date", serial(inv.doc), "Imported From TMS", null],
+    ["Contact", HEADER.contact, "VAT Date", serial(inv.doc), "External Document No.", inv.project],
+    ["Your Reference", inv.invNo, "Due Date", serial(inv.due), "Salesperson Code", HEADER.salesperson],
+    ["Document Date", serial(inv.doc), "TMS Customer Ref. No. 1", null, "Status", "Released"]];
+  gen.forEach((row, i) => { getRow(top + i, 14.5); row.forEach((v, j) => {
+    const c = j + 1, last = i === 3; let s;
+    if (c === 2) s = last ? X.centerDateB : X.center;
+    else if (last) s = c === 6 ? X.boldB : X.normB;
+    else s = typeof v === "number" ? X.date : X.norm;
+    put(top + i, c, v, s); }); });
+  const hr = top + GAP_TO_HEADER;
+  getRow(hr, 35); LINE_COLS.forEach((h, j) => put(hr, LAYOUT_COLS[j], h, X.head));
+  let r = hr + 1;
+  for (const l of inv.lines){
+    const vals = l.type === "Item"
+      ? ["Item", l.no, null, l.desc, l.qty, l.uom, l.price, l.amount, HEADER.vat_group, 0, null, HEADER.wyn, inv.invNo, HEADER.consignee, HEADER.industry, HEADER.asset, HEADER.cust_dept]
+      : ["Comment", null, null, l.desc || null, ...Array(13).fill(null)];
+    getRow(r, 14.5);
+    vals.forEach((v, j) => put(r, LAYOUT_COLS[j], v, (j === 6 || j === 7) ? X.money : X.line));
+    r++;
+  }
+  const lastLine = r - 1; r++;
+  const amounts = `H${hr + 1}:H${lastLine}`, sub = `SUM(${amounts})`, gst = `ROUND(SUM(${amounts})*${GST},2)`;
+  [["Subtotal Excl. VAT (SGD)", sub, inv.subtotal, X.totVal], ["Total VAT (SGD)", gst, inv.vat, X.totVal],
+   ["Total Incl. VAT (SGD)", `${sub}+${gst}`, inv.total, X.grand]].forEach(([label, f, v, s]) => {
+    getRow(r, 14.5); put(r, 6, label, X.totLabel); put(r, 8, v, s, f); r++; });
+  for (const w of inv.warnings){ r++; put(r, 1, "WARNING: " + w, X.warn); }
+}
+async function addTablesToOriginal(book, res){
+  const zip = await unzip(book.buf);
+  const changed = {};
+  const stylesDoc = parseXml(await zip.text("xl/styles.xml"));
+  const X = addStyles(stylesDoc); changed["xl/styles.xml"] = toXml(stylesDoc);
+  for (const inv of res.invoices){
+    const sh = book.sheets.find(s => s.name.trim().toUpperCase() === inv.project);
+    if (!sh) continue;
+    let top = Math.max(START_ROW, (book.lastRows[sh.name] || 0) + GAP_BELOW_TRIPS);
+    // keep clear of pictures pasted on the tab
+    const dir = sh.path.slice(0, sh.path.lastIndexOf("/") + 1), relsXml = await zip.text(dir + "_rels/" + sh.path.slice(dir.length) + ".rels");
+    if (relsXml) for (const rel of parseXml(relsXml).getElementsByTagName("Relationship")){
+      if (!/\/drawing$/.test(rel.getAttribute("Type"))) continue;
+      const parts = (dir + rel.getAttribute("Target")).split("/"), outp = [];
+      for (const s of parts){ if (s === "..") outp.pop(); else if (s !== ".") outp.push(s); }
+      const dx = await zip.text(outp.join("/"));
+      if (dx) for (const to of parseXml(dx).getElementsByTagNameNS("*", "to")){
+        const rowEl = [...to.children].find(e => e.localName === "row");
+        if (rowEl) top = Math.max(top, +rowEl.textContent + 1 + 7);
+      }
+    }
+    const doc = parseXml(changed[sh.path] || await zip.text(sh.path));
+    setWidths(doc); writeTable(doc, top, inv, X);
+    changed[sh.path] = toXml(doc);
+  }
+  const wb = await zip.text("xl/workbook.xml");
+  if (/<calcPr\b/.test(wb) && !/fullCalcOnLoad/.test(wb)) changed["xl/workbook.xml"] = wb.replace(/<calcPr\b/, '<calcPr fullCalcOnLoad="1"');
+  const entries = zip.order.map(n => changed[n] != null ? [n, changed[n]] : [n, zip.files[n].data, zip.files[n]]);
+  return zipStore(entries);
+}
+
+/* ===================== page ===================== */
+const $ = id => document.getElementById(id);
+let state = {res:null, fileName:"", isSample:true, selected:null};
+let downloads = null;
+
+function toast(text){ const t = $("toast"); t.textContent = text; t.classList.add("on"); clearTimeout(toast.h); toast.h = setTimeout(() => t.classList.remove("on"), 1800); }
+function showError(text){ const m = $("msg"); m.textContent = text; m.hidden = !text; }
+
+function linesTsv(inv){
+  return inv.lines.map(l => (l.type === "Item"
+    ? ["Item", l.no, "", l.desc, l.qty, l.uom, l.price, l.amount, HEADER.vat_group, 0, "", HEADER.wyn, inv.invNo, HEADER.consignee, HEADER.industry, HEADER.asset, HEADER.cust_dept]
+    : ["Comment", "", "", l.desc, "", "", "", "", "", "", "", "", "", "", "", "", ""]).join("\t")).join("\r\n");
+}
+async function copyText(text, label, fallbackHost){
+  try { await navigator.clipboard.writeText(text); toast(label + " copied. Paste into the ERP."); }
+  catch {
+    let ta = fallbackHost.querySelector("textarea.copyarea");
+    if (!ta){ ta = document.createElement("textarea"); ta.className = "copyarea"; ta.id = "copyFallback"; ta.readOnly = true; fallbackHost.appendChild(ta); }
+    ta.value = text; ta.hidden = false; ta.focus(); ta.select();
+    toast("Press Ctrl+C to copy the selected lines.");
+  }
+}
+
+function renderTotals(){
+  const {res} = state, inv = res.invoices;
+  const sum = k => r2(inv.reduce((a, i) => a + i[k], 0));
+  const checks = inv.filter(i => i.warnings.length).length;
+  $("totals").innerHTML = `
+    <div><span class="eyebrow">Projects</span><b>${inv.length}</b></div>
+    <div><span class="eyebrow">Trips</span><b>${res.tripCount}</b></div>
+    <div><span class="eyebrow">Excl. GST</span><b>${money(sum("subtotal"))}</b></div>
+    <div><span class="eyebrow">Incl. GST</span><b>${money(sum("total"))}</b></div>
+    <div><span class="eyebrow">Need checking</span><b>${checks}</b></div>`;
+}
+function renderList(){
+  const ul = $("plist"); ul.innerHTML = "";
+  $("pcount").textContent = `${state.res.invoices.length} invoices`;
+  for (const inv of state.res.invoices){
+    const li = document.createElement("li"), b = document.createElement("button");
+    b.type = "button"; b.setAttribute("aria-current", String(inv.project === state.selected));
+    b.innerHTML = `<span class="pn">${esc(inv.project)}</span><span class="pa num">${money(inv.subtotal)}</span>
+      <span class="ps"><span class="dot${inv.warnings.length ? " warn" : ""}"></span>${esc(inv.invNo)} · ${inv.trips} trip${inv.trips === 1 ? "" : "s"}${inv.warnings.length ? " · check" : ""}</span>`;
+    b.addEventListener("click", () => { state.selected = inv.project; renderList(); renderInvoice(); if (matchMedia("(max-width:860px)").matches) $("inv").scrollIntoView({behavior:"smooth", block:"start"}); });
+    li.appendChild(b); ul.appendChild(li);
+  }
+  if (state.res.skipped.length){
+    const li = document.createElement("li");
+    li.innerHTML = `<div class="msg note" style="margin:6px">Not billed (no tab with this name): ${state.res.skipped.map(esc).join(", ")}</div>`;
+    ul.appendChild(li);
+  }
+}
+function renderInvoice(){
+  const inv = state.res.invoices.find(i => i.project === state.selected);
+  const host = $("inv");
+  if (!inv){ host.innerHTML = `<p class="muted">Pick a project to see its invoice.</p>`; return; }
+  const gen = [["Customer Name", HEADER.customer], ["Posting Date", dmySlash(inv.doc)], ["Imported From TMS", "Off"],
+    ["Contact", HEADER.contact], ["VAT Date", dmySlash(inv.doc)], ["External Document No.", inv.project],
+    ["Your Reference", inv.invNo], ["Due Date", dmySlash(inv.due)], ["Salesperson Code", HEADER.salesperson],
+    ["Document Date", dmySlash(inv.doc)], ["TMS Customer Ref. No. 1", "–"], ["Status", "Released"]];
+  const rows = inv.lines.map(l => l.type === "Item"
+    ? `<tr class="item"><td>Item</td><td class="code${l.no === "ASK BOSS" ? " miss" : ""}">${esc(l.no)}</td><td>${esc(l.desc)}</td><td class="num">${qtyFmt(l.qty)}</td><td>${l.uom}</td><td class="num">${money(l.price)}</td><td class="num">${money(l.amount)}</td><td>${HEADER.vat_group}</td><td>${HEADER.wyn}</td><td class="code">${esc(inv.invNo)}</td><td>${HEADER.industry}</td></tr>`
+    : `<tr class="comment"><td>Comment</td><td></td><td class="desc">${esc(l.desc)}</td><td colspan="8"></td></tr>`).join("");
+  host.innerHTML = `
+    <div class="invhd">
+      <div><div class="eyebrow">Sales invoice</div><h2>${esc(inv.project)}</h2><div class="ref">${esc(inv.invNo)} · ${inv.trips} trip${inv.trips === 1 ? "" : "s"}</div></div>
+      ${inv.warnings.length ? `<span class="pill warn">Check before entering</span>` : `<span class="pill ok">Ready</span>`}
+    </div>
+    ${inv.warnings.length ? `<div class="warns">${inv.warnings.map(w => `<div class="msg err">${esc(w)}</div>`).join("")}</div>` : ""}
+    <div><div class="secthd"><h3 class="eyebrow">General</h3></div>
+      <div class="gen">${gen.map(([k, v]) => `<div class="f"><span>${k}</span><span>${esc(v)}</span></div>`).join("")}</div></div>
+    <div style="display:flex;flex-direction:column;gap:10px" id="linesSec">
+      <div class="secthd"><h3 class="eyebrow">Lines</h3>
+        <button class="btn primary" type="button" id="copyLines">Copy lines for ERP</button></div>
+      <div class="tablewrap"><table class="lines"><thead><tr>
+        <th>Type</th><th>No.</th><th>Description</th><th class="num">Quantity</th><th>Unit of Measure Code</th><th class="num">Unit Price Excl. VAT</th><th class="num">Line Amount Excl. VAT</th><th>VAT Prod. Posting Group</th><th>WYN Dept Code</th><th>Project Code</th><th>Industry Code</th>
+      </tr></thead><tbody>${rows}</tbody></table></div>
+      <p class="muted" style="margin:0;font-size:.82rem">The copy includes all 17 ERP columns, Container No. through Cust Dept Code (Consignee, Asset and Cust Dept are Z_NA).</p>
+    </div>
+    <div class="sum">
+      <span>Subtotal Excl. VAT (SGD)</span><span>${money(inv.subtotal)}</span>
+      <span>Total VAT 9% (SGD)</span><span>${money(inv.vat)}</span>
+      <span class="grand">Total Incl. VAT (SGD)</span><span class="grand">${money(inv.total)}</span>
+    </div>`;
+  $("copyLines").addEventListener("click", () => copyText(linesTsv(inv), `${inv.lines.length} lines`, $("linesSec")));
+}
+function renderFile(){
+  const inv = state.res.invoices;
+  $("fname").innerHTML = `${esc(state.fileName)} ${state.isSample ? `<span class="pill sample">Sample</span>` : ""}`;
+  $("fsub").textContent = state.isSample
+    ? "September 2026 trips, built in. Choose this month's billing file to replace it."
+    : `${state.res.tripCount} trips read · ${inv.length} invoices built`;
+}
+function renderAll(){
+  if (!state.res.invoices.some(i => i.project === state.selected))
+    state.selected = (state.res.invoices.find(i => i.warnings.length) || state.res.invoices[0] || {}).project || null;
+  renderFile(); renderTotals(); renderList(); renderInvoice(); renderRates();
+}
+function renderRates(){
+  const rows = Object.entries(EQUIPMENT).map(([t, e]) => `<tr><td class="mono">${t}</td><td class="mono">${e[0]}</td><td>${e[1]}</td><td class="num">${money(e[2])}</td><td class="mono">${e[3]}</td><td class="num">${money(e[5])}/hr</td></tr>`).join("");
+  $("rates").innerHTML = `<thead><tr><th>Type in sheet</th><th>Item code</th><th>Description</th><th class="num">Per trip</th><th>Standby code</th><th class="num">Standby</th></tr></thead><tbody>${rows}
+    <tr><td>Every trip</td><td class="mono">${FUEL[0]}</td><td>${FUEL[1]}</td><td class="num">${money(FUEL[2])}</td><td></td><td></td></tr>
+    <tr><td>Leaves after 21:00</td><td class="mono">${OVERTIME[0]}</td><td>${OVERTIME[1]}</td><td class="num">${money(OVERTIME[2])}</td><td></td><td></td></tr></tbody>`;
+}
+
+async function loadFile(file){
+  showError("");
+  if (!/\.(xlsx|xlsm)$/i.test(file.name)){ showError(`"${file.name}" is not an Excel workbook. Choose the .xlsx billing file.`); return; }
+  try {
+    const sheets = await readWorkbook(await file.slice(0).arrayBuffer());
+    const buf = await file.arrayBuffer();
+    const {trips, lastRows} = readTrips(sheets);
+    if (!trips.length){ showError(`No trips found in "${file.name}". The trip list needs a header row with "DO No." and "Project Code".`); return; }
+    const tabs = sheets.map(s => [s.name, s.cell(1, 2)]);
+    state = {res: buildAll(trips, tabs), fileName: file.name, isSample: false, selected: null, book: {buf, sheets, lastRows}};
+    window.__state = state;
+    renderAll(); $("dlBtn").hidden = false; toast(`${state.res.invoices.length} invoices built`);
+  } catch (e) {
+    showError(e && e.message === "not-xlsx"
+      ? `"${file.name}" could not be read as an Excel workbook. Open it in Excel and save it as Excel Workbook (.xlsx).`
+      : `"${file.name}" could not be read (${e && e.message || e}). Save it again as .xlsx and retry.`);
+  }
+}
+function renderEmpty(){
+  $("fname").textContent = "No file chosen yet";
+  $("fsub").textContent = "Choose this month's billing Excel file to build the invoices.";
+  $("totals").innerHTML = ""; $("pcount").textContent = "";
+  $("plist").innerHTML = `<li class="muted" style="padding:10px">Projects appear here after you choose a file.</li>`;
+  $("inv").innerHTML = `<p class="muted" style="margin:0">Choose the billing file above (or drag it onto the page). Each project's invoice will show here, ready to copy into the ERP.</p>`;
+  renderRates(); $("dlBtn").hidden = true;
+}
+function loadSample(){
+  if (!SAMPLE){ renderEmpty(); return; }
+  const trips = SAMPLE.trips.map(([d, doNo, reach, depart, type, veh, proj]) => {
+    const [y, m, dd] = d.split("-").map(Number);
+    return {date: dayNum(y, m, dd), do: doNo, reach: toMinutes(reach), depart: toMinutes(depart), type, vehicle: veh, project_raw: proj};
+  });
+  state = {res: buildAll(trips, SAMPLE.tabs), fileName: SAMPLE.file, isSample: true, selected: null};
+  window.__state = state;
+  renderAll();
+}
+
+$("file").addEventListener("change", e => { const f = e.target.files[0]; if (f) loadFile(f); e.target.value = ""; });
+$("chooseLbl").addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " "){ e.preventDefault(); $("file").click(); } });
+const fb = $("filebar");
+["dragenter","dragover"].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); fb.classList.add("dragging"); }));
+["dragleave","drop"].forEach(ev => document.addEventListener(ev, e => { e.preventDefault(); if (ev === "drop" || e.relatedTarget === null) fb.classList.remove("dragging"); }));
+document.addEventListener("drop", e => { const f = e.dataTransfer?.files?.[0]; if (f) loadFile(f); });
+
+$("dlBtn").addEventListener("click", async () => {
+  if (!state.book) return;
+  const base = state.fileName.replace(/\.(xlsx|xlsm)$/i, "");
+  if (!downloads){
+    $("dlBtn").disabled = true;
+    try {
+      const a = document.createElement("a"); a.href = URL.createObjectURL(await addTablesToOriginal(state.book, state.res));
+      a.download = `${base} - INVOICES.xlsx`; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000); toast("Downloaded");
+    } catch (e) { showError("Could not make the Excel file (" + (e && e.message || e) + ")."); }
+    $("dlBtn").disabled = false; return;
+  }
+  try {
+    await downloads.save({filename: `${base} - INVOICES.xlsx`, data: await addTablesToOriginal(state.book, state.res)});
+    toast("Saved");
+  } catch (e) {
+    if (e && e.code === "declined") return;
+    if (e && e.code === "rate_limited") { toast("A save is already waiting for your answer."); return; }
+    $("dlBtn").hidden = true; toast("Downloads are not available here. Use Copy lines instead.");
+  }
+});
+window.__buildXlsx = () => addTablesToOriginal(state.book, state.res);   // used for testing
+
+loadSample();
+(async () => {
+  downloads = null;
+  $("dlBtn").hidden = !state.book;
+})();
+</script>
+
+</body></html>
